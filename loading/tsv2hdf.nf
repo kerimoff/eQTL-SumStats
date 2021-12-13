@@ -10,9 +10,11 @@
 // Input files _must_ be of the *.tsv.gz residing in the tsv_in directory
 def tsv_glob = []
 params.quant_methods.each {
-                tsv_glob.add(new File(params.tsv_in, "*_$it.*.tsv.gz"))
+                tsv_glob.add(new File(params.tsv_in, "*_$it*.tsv.gz"))
         }
-tsv_to_process = Channel.fromPath(tsv_glob)
+tsv_to_process = Channel.fromPath(tsv_glob).view()
+meta_table_ch_1 = Channel.fromPath(params.meta_table)
+// meta_table_ch_2 = Channel.fromPath(params.meta_table)
 
 /* Any previously generated HDF5 files in the hdf5_study_dir will be included
    in the chromosome + quant_method files.
@@ -26,24 +28,22 @@ tsv_to_process = Channel.fromPath(tsv_glob)
 */
 
 process study_tsv_to_hdf5 {
-
-  containerOptions "--bind $params.tsv_in --bind $params.meta_table --bind $params.hdf5_study_dir --bind $params.hdf5_chrom_dir"
-  publishDir "$params.hdf5_study_dir", mode: 'copy'
-
-  memory { 8.GB * task.attempt }
-  maxRetries 3
-  errorStrategy { task.exitStatus == 130 ? 'retry' : 'terminate' }
+  scratch true
+  // containerOptions "--bind $params.tsv_in --bind $params.meta_table --bind $params.hdf5_study_dir --bind $params.hdf5_chrom_dir"
+  publishDir "$params.hdf5_study_dir", mode: 'move'
+  // storeDir "/gpfs/hpc/projects/eQTLCatalogue/HDF5"
 
   input:
   each chr from params.chromosomes
   file tsv from tsv_to_process
+  file meta_table from meta_table_ch_1.collect()
 
   output:
-  file "${chr}/*.h5" optional true into study
+  tuple val(chr), file("${chr}/*.h5") into study
 
   """
   mkdir $chr;
-  eqtl-load -f $tsv -metadata $params.meta_table -chr $chr -loader study;
+  eqtl-load -f $tsv -metadata $meta_table -chr $chr -loader study;
   """
 }
 
@@ -54,34 +54,34 @@ Consolidate all chromosome + quant method combinations into their own HDF5 files
 ================================================================================
 */
 
-process consolidate_hdfs_by_chrom {
+// process consolidate_hdfs_by_chrom {
+//   // publishDir "/gpfs/space/home/kerimov/HDF5_data_conv/loading/data/hdf/consolidate_hdfs_by_chrom", mode: 'move'
 
-  containerOptions "--bind $params.meta_table --bind $params.hdf5_study_dir"
+//   input:
+//   each method from params.quant_methods
+//   tuple val(chr), file(per_chr) from study
+//   file meta_table from meta_table_ch_2.collect()
 
-  memory { 8.GB * task.attempt }
-  maxRetries 3
-  errorStrategy 'retry'
+//   output:
+//   tuple val("${per_chr.baseName}"), file("${chr}.${method}.h5") into hdf5_chrom
 
-  input:
-  each chr from params.chromosomes
-  each method from params.quant_methods
-  file "${chr}/*.h5" from study.collect()
+//   script:
+//   """
+//   eqtl-consolidate -in_file $per_chr -out_file ${chr}.${method}.h5 -meta $meta_table -quant $method -chrom $chr
+//   """
 
-  output:
-  file "${chr}.${method}.h5" optional true into hdf5_chrom
-
-  script:
-  """
-  hdf="${chr}.${method}.h5"
-  out="file_${chr}.${method}.h5"
-  for f in $params.hdf5_study_dir/$chr/*+"$method".h5; do
-        echo \$f;
-        if [ -f \$f ]; then
-                eqtl-consolidate -in_file \$f -out_file \$hdf -meta $params.meta_table -quant $method -chrom $chr
-        fi
-  done
-  """
-}
+//   // script:
+//   // """
+//   // hdf="${chr}.${method}.h5"
+//   // out="file_${chr}.${method}.h5"
+//   // for f in $params.hdf5_study_dir/$chr/*+"$method".h5; do
+//   //       if [ -f \$f ]; then
+//   //               echo in_if
+//   //               eqtl-consolidate -in_file \$f -out_file \$hdf -meta $meta_table -quant $method -chrom $chr
+//   //       fi
+//   // done
+//   // """
+// }
 
 /*
 ================================================================================
@@ -89,27 +89,21 @@ process consolidate_hdfs_by_chrom {
 ================================================================================
 */
 
-process index_consolidated_hdfs {
+// process index_consolidated_hdfs {
+//   publishDir "$params.hdf5_chrom_dir", mode: 'copy'
 
-  containerOptions "--bind $params.meta_table --bind $params.hdf5_study_dir --bind $params.hdf5_chrom_dir"
-  publishDir "$params.hdf5_chrom_dir", mode: 'move'
+//   input:
+//   tuple val(file_name), file(hdf5) from hdf5_chrom
 
-  memory { 8.GB * task.attempt }
-  maxRetries 3
-  errorStrategy 'retry'
+//   output:
+//   file "${file_name}_$hdf5" 
 
-  input:
-  file hdf5 from hdf5_chrom
+//   script:
+//   """
+//   eqtl-reindex -f $hdf5
+//   ptrepack --chunkshape=auto --propindexes --complevel=9 --complib=blosc $hdf5 ${file_name}_$hdf5
+//   """
 
-  output:
-  file "file_$hdf5" optional true into indexed_hdf5_chrom
-
-  script:
-  """
-  eqtl-reindex -f $hdf5
-  ptrepack --chunkshape=auto --propindexes --complevel=9 --complib=blosc $hdf5 file_$hdf5
-  """
-
-}
+// }
 
 
