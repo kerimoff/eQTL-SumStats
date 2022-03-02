@@ -29,6 +29,7 @@ meta_table_ch_1 = Channel.fromPath(params.meta_table)
 
 process study_tsv_to_hdf5 {
   scratch true
+  stageInMode "copy"
   // containerOptions "--bind $params.tsv_in --bind $params.meta_table --bind $params.hdf5_study_dir --bind $params.hdf5_chrom_dir"
   publishDir "$params.hdf5_study_dir", mode: 'move'
   // storeDir "/gpfs/hpc/projects/eQTLCatalogue/HDF5"
