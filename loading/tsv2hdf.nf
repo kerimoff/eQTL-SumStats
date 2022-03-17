@@ -31,7 +31,6 @@ process study_tsv_to_hdf5 {
   scratch true
   stageInMode "copy"
   // containerOptions "--bind $params.tsv_in --bind $params.meta_table --bind $params.hdf5_study_dir --bind $params.hdf5_chrom_dir"
-  publishDir "$params.hdf5_study_dir", mode: 'move'
   // storeDir "/gpfs/hpc/projects/eQTLCatalogue/HDF5"
 
   input:
@@ -40,7 +39,7 @@ process study_tsv_to_hdf5 {
   file meta_table from meta_table_ch_1.collect()
 
   output:
-  tuple val(chr), file("${chr}/*.h5") into study
+  tuple val(chr), file("${chr}/*.h5") into study_ch
 
   """
   mkdir $chr;
@@ -90,21 +89,21 @@ Consolidate all chromosome + quant method combinations into their own HDF5 files
 ================================================================================
 */
 
-// process index_consolidated_hdfs {
-//   publishDir "$params.hdf5_chrom_dir", mode: 'copy'
+process index_consolidated_hdfs {
+  publishDir "$params.hdf5_study_dir", mode: 'move'
 
-//   input:
-//   tuple val(file_name), file(hdf5) from hdf5_chrom
+  input:
+  tuple val(chr), file(hdf5) from study_ch
 
-//   output:
-//   file "${file_name}_$hdf5" 
+  output:
+  file "chr${chr}_${hdf5.baseName - 'file_'}.h5" 
 
-//   script:
-//   """
-//   eqtl-reindex -f $hdf5
-//   ptrepack --chunkshape=auto --propindexes --complevel=9 --complib=blosc $hdf5 ${file_name}_$hdf5
-//   """
+  script:
+  """
+  eqtl-reindex -f $hdf5
+  ptrepack --chunkshape=auto --propindexes --complevel=9 --complib=blosc $hdf5 chr${chr}_${hdf5.baseName - 'file_'}.h5
+  """
 
-// }
+}
 
 
